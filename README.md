@@ -46,6 +46,7 @@ modules/ThreatValidation/ orchestrazione threat-led difensiva (no exploit)
 scripts/                 entry point operativi
 tests/unit/              test Pester sicuri e dimostrativi
 docs/                    preparazione ambiente, safety model, compliance
+- `docs/guida-operativa-win11-ubuntu.md` guida operativa avanzata pronta all'uso (Windows 11 + Ubuntu)
 ```
 
 ## Uso rapido
