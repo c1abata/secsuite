@@ -47,6 +47,7 @@ scripts/                 entry point operativi
 tests/unit/              test Pester sicuri e dimostrativi
 docs/                    preparazione ambiente, safety model, compliance
 - `docs/guida-operativa-win11-ubuntu.md` guida operativa avanzata pronta all'uso (Windows 11 + Ubuntu)
+- `docs/guida-esecuzione-suite-completa.md` guida step-by-step per eseguire l'intera suite (Windows 11 + Ubuntu)
 ```
 
 ## Uso rapido
