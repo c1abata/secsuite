@@ -55,7 +55,7 @@ function New-SecSafeNmapPlan {
                     Name    = 'SNMP_Resilience_Check'
                     Tool    = 'nmap'
                     Purpose = 'Verifica configurazioni SNMP esposte e community deboli in sola modalità discovery.'
-                    Command = "nmap $common -sU -p 161 -sV --script \"snmp-info,snmp-interfaces,snmp-sysdescr,snmp-processes\" --script-args \"snmpcommunity=public,private\" -iL \"$TargetFile\" $excludeArg -oA \"$OutputDirectory/snmp_resilience\""
+                    Command = ('nmap {0} -sU -p 161 -sV --script "snmp-info,snmp-interfaces,snmp-sysdescr,snmp-processes" --script-args "snmpcommunity=public,private" -iL "{1}" {2} -oA "{3}/snmp_resilience"' -f $common, $TargetFile, $excludeArg, $OutputDirectory)
                 }
             )
         }
@@ -65,7 +65,7 @@ function New-SecSafeNmapPlan {
                     Name    = 'AD_Identity_Baseline'
                     Tool    = 'nmap'
                     Purpose = 'Controlla cifratura RDP e segnali SMB legacy senza exploit.'
-                    Command = "nmap $common -p 445,3389 -sV --script \"rdp-enum-encryption,rdp-ntlm-info,smb-security-mode,smb2-security-mode\" -iL \"$TargetFile\" $excludeArg -oA \"$OutputDirectory/identity_access\""
+                    Command = ('nmap {0} -p 445,3389 -sV --script "rdp-enum-encryption,rdp-ntlm-info,smb-security-mode,smb2-security-mode" -iL "{1}" {2} -oA "{3}/identity_access"' -f $common, $TargetFile, $excludeArg, $OutputDirectory)
                 }
             )
         }
@@ -75,7 +75,7 @@ function New-SecSafeNmapPlan {
                     Name    = 'Windows_Safe_Protocol_Check'
                     Tool    = 'nmap'
                     Purpose = 'Rileva protocolli SMB deboli con script NSE in modalità non distruttiva.'
-                    Command = "nmap $common -p 445 --script \"smb-protocols,smb-security-mode,smb2-capabilities\" --script-args \"unsafe=0\" -iL \"$TargetFile\" $excludeArg -oA \"$OutputDirectory/windows_protocol\""
+                    Command = ('nmap {0} -p 445 --script "smb-protocols,smb-security-mode,smb2-capabilities" --script-args "unsafe=0" -iL "{1}" {2} -oA "{3}/windows_protocol"' -f $common, $TargetFile, $excludeArg, $OutputDirectory)
                 }
             )
         }
@@ -85,7 +85,7 @@ function New-SecSafeNmapPlan {
                     Name    = 'Unix_Web_Exposure_Check'
                     Tool    = 'nmap'
                     Purpose = 'Controlla exposure web e metodi SSH permessi senza inviare payload.'
-                    Command = "nmap $common -p 22,80,443,8080 -sV --script \"http-shellshock,http-methods,ssh-auth-methods\" --script-args \"unsafe=0\" -iL \"$TargetFile\" $excludeArg -oA \"$OutputDirectory/unix_exposure\""
+                    Command = ('nmap {0} -p 22,80,443,8080 -sV --script "http-shellshock,http-methods,ssh-auth-methods" --script-args "unsafe=0" -iL "{1}" {2} -oA "{3}/unix_exposure"' -f $common, $TargetFile, $excludeArg, $OutputDirectory)
                 }
             )
         }
@@ -95,7 +95,7 @@ function New-SecSafeNmapPlan {
                     Name    = 'MSSQL_Safe_Audit'
                     Tool    = 'nmap'
                     Purpose = 'Audit SQL Server focalizzato su metadata, TLS e configurazioni visibili.'
-                    Command = "nmap $common -p 1433 -sV --script \"ms-sql-info,ms-sql-ntlm-info,ssl-cert,ssl-enum-ciphers\" --script-args \"ms-sql-ntlm-info.auth=anonymous\" -iL \"$TargetFile\" $excludeArg -oA \"$OutputDirectory/mssql_audit\""
+                    Command = ('nmap {0} -p 1433 -sV --script "ms-sql-info,ms-sql-ntlm-info,ssl-cert,ssl-enum-ciphers" --script-args "ms-sql-ntlm-info.auth=anonymous" -iL "{1}" {2} -oA "{3}/mssql_audit"' -f $common, $TargetFile, $excludeArg, $OutputDirectory)
                 }
             )
         }
@@ -105,7 +105,7 @@ function New-SecSafeNmapPlan {
                     Name    = 'Web_TLS_Baseline'
                     Tool    = 'nmap'
                     Purpose = 'Baseline web security headers e postura TLS in ottica NIS2/DORA.'
-                    Command = "nmap $common -p 80,443 -sV --script \"http-security-headers,ssl-cert,ssl-enum-ciphers\" -iL \"$TargetFile\" $excludeArg -oA \"$OutputDirectory/web_tls\""
+                    Command = ('nmap {0} -p 80,443 -sV --script "http-security-headers,ssl-cert,ssl-enum-ciphers" -iL "{1}" {2} -oA "{3}/web_tls"' -f $common, $TargetFile, $excludeArg, $OutputDirectory)
                 }
             )
         }
