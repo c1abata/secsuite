@@ -11,6 +11,12 @@
         EmitPdf  = $true
     }
     ADAudit = @{
+        # Auto usa il modulo ActiveDirectory quando disponibile.
+        # Ldap permette audit da host NON joinati al dominio.
+        ConnectionMode = 'Auto'
+        DomainController = ''
+        UseLdaps = $true
+        LdapAuthType = 'Negotiate'
         PrivilegedGroups = @(
             'Administrators',
             'Domain Admins',

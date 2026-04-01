@@ -81,6 +81,29 @@ Ogni esecuzione produce file JSON con:
 
 La suite è adatta a laboratori, assessment autorizzati, verifiche di hardening e audit difensivi. Non è una piattaforma di red team né una suite di exploitation.
 
+
+## Audit AD anche senza domain join (stile PingCastle/BloodHound, ma difensivo)
+
+Il modulo `ADAudit` ora supporta due modalità:
+
+- `ConnectionMode = 'Auto'`: usa `ActiveDirectory` se il modulo è disponibile.
+- `ConnectionMode = 'Ldap'`: raccoglie dati via LDAP/LDAPS anche da host **non joinati**.
+
+Novità principali:
+
+- raccolta delle evidenze AD via LDAP (`users`, `computers`, `trusts`, gruppi privilegiati)
+- calcolo `ExposureScore` (rating Low/Medium/High/Critical)
+- produzione `AttackPaths` (grafo relazioni membro→gruppo, utile per analisi tipo path review)
+
+Esempio rapido (host non joinato):
+
+```powershell
+$cred = Get-Credential
+pwsh -NoProfile -File .\scripts\Invoke-ADAudit.ps1 -OutputPath .\output -DomainController dc01.contoso.local -UseLdaps -Credential $cred
+```
+
+> Nota: la suite resta difensiva e read-only. Non include azioni offensive o modifica dello stato AD.
+
 ## Threat-led validation difensiva
 
 Per integrare le richieste operative (NIS2/DORA, controlli infrastrutturali, focus Windows/Linux/DB) mantenendo una postura difensiva:
