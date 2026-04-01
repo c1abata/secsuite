@@ -254,6 +254,167 @@ function Get-SecADExposureScore {
     }
 }
 
+function Write-SecADTelemetry {
+    [CmdletBinding()]
+    param(
+        [Parameter()][object]$Context,
+        [Parameter(Mandatory)][ValidateSet('DEBUG','INFO','WARN','ERROR')][string]$Level,
+        [Parameter(Mandatory)][string]$Message,
+        [Parameter()][hashtable]$Data
+    )
+
+    if (-not $Context) { return }
+
+    $writeLog = Get-Command -Name Write-SecLog -ErrorAction SilentlyContinue
+    if ($writeLog) {
+        Write-SecLog -Context $Context -Level $Level -Area 'ADAudit' -Message $Message -Data $Data
+    }
+}
+
+function Invoke-SecADSecurityChecks {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Domain,
+        [Parameter()][string]$DomainController,
+        [Parameter()][System.Management.Automation.PSCredential]$Credential,
+        [Parameter()][switch]$UnauthenticatedOnly,
+        [Parameter()][switch]$AuthenticatedOnly,
+        [Parameter()][object]$Context
+    )
+
+    $targetServer = if ([string]::IsNullOrWhiteSpace($DomainController)) { $Domain } else { $DomainController }
+    $domainDn = ConvertTo-SecDomainDn -DomainFqdn $Domain
+    $startedAt = (Get-Date).ToUniversalTime()
+
+    $report = [ordered]@{
+        Domain = $Domain
+        DomainController = $targetServer
+        StartedAtUtc = $startedAt.ToString('o')
+        UnauthenticatedChecks = @()
+        AuthenticatedChecks = @()
+        Errors = @()
+    }
+
+    Write-SecADTelemetry -Context $Context -Level INFO -Message 'Extended AD security checks started.' -Data @{
+        domain = $Domain
+        domainController = $targetServer
+        unauthenticatedOnly = [bool]$UnauthenticatedOnly
+        authenticatedOnly = [bool]$AuthenticatedOnly
+        hasCredential = [bool]$Credential
+    }
+
+    if (-not $AuthenticatedOnly) {
+        $unauth = New-Object System.Collections.Generic.List[object]
+
+        try {
+            $dnsServers = Resolve-DnsName -Name $Domain -Type NS -ErrorAction Stop | Select-Object -ExpandProperty NameHost -Unique
+            $unauth.Add([pscustomobject]@{ Check='DNS namespace discovery'; Status='OK'; Details=@($dnsServers) })
+        }
+        catch {
+            $unauth.Add([pscustomobject]@{ Check='DNS namespace discovery'; Status='WARN'; Details=@('NS records not discovered from current host.') })
+        }
+
+        try {
+            $ldapConn = New-SecLdapConnection -Server $targetServer -Port 389 -AuthType Negotiate
+            $root = Get-SecLdapEntries -Connection $ldapConn -BaseDn '' -Filter '(objectClass=*)' -Properties @('defaultNamingContext') -Scope Base
+            $isReachable = $null -ne $root -and @($root).Count -gt 0
+            $unauth.Add([pscustomobject]@{
+                Check = 'LDAP endpoint reachability'
+                Status = if ($isReachable) { 'OK' } else { 'WARN' }
+                Details = @("Target: $targetServer:389")
+            })
+        }
+        catch {
+            $unauth.Add([pscustomobject]@{ Check='LDAP endpoint reachability'; Status='WARN'; Details=@('LDAP service unreachable or blocked from current source.') })
+        }
+        finally {
+            if ($ldapConn) { $ldapConn.Dispose() }
+        }
+
+        try {
+            $commonUsers = @('administrator','guest','krbtgt')
+            $foundUsers = @()
+            $searchConn = New-SecLdapConnection -Server $targetServer -Port 389 -AuthType Negotiate
+            foreach ($user in $commonUsers) {
+                $filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$user))"
+                $entry = Get-SecLdapEntries -Connection $searchConn -BaseDn $domainDn -Filter $filter -Properties @('distinguishedName')
+                if (@($entry).Count -gt 0) { $foundUsers += $user }
+            }
+
+            if ($foundUsers.Count -gt 0) {
+                $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='WARN'; Details=@("Discovered accounts: $($foundUsers -join ', ')") })
+            }
+            else {
+                $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='OK'; Details=@('No common principals resolved with current technique.') })
+            }
+        }
+        catch {
+            $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='INFO'; Details=@('Enumeration skipped because LDAP query was not possible.') })
+        }
+        finally {
+            if ($searchConn) { $searchConn.Dispose() }
+        }
+
+        $report.UnauthenticatedChecks = @($unauth)
+    }
+
+    if (-not $UnauthenticatedOnly) {
+        $auth = New-Object System.Collections.Generic.List[object]
+
+        if (-not $Credential) {
+            $auth.Add([pscustomobject]@{ Check='Authenticated checks'; Status='INFO'; Details=@('No credentials provided. Authenticated checks skipped.') })
+        }
+        else {
+            try {
+                $summary = Get-SecLdapSummary -Config @{ DomainController = $targetServer; UseLdaps = $false; LdapAuthType = 'Negotiate'; InactiveUserDays = 90; PrivilegedGroups = @('Domain Admins','Enterprise Admins') } -DomainController $targetServer -Credential $Credential
+
+                $pwdMin = $summary.PasswordPolicy.MinPasswordLength
+                $auth.Add([pscustomobject]@{
+                    Check='Password policy baseline'
+                    Status= if ($null -eq $pwdMin -or $pwdMin -ge 12) { 'OK' } else { 'WARN' }
+                    Details=@("Min password length: $pwdMin","Complexity enabled: $($summary.PasswordPolicy.ComplexityEnabled)")
+                })
+
+                $kerberoastCount = @($summary.ServiceAccounts).Count
+                $auth.Add([pscustomobject]@{
+                    Check='Kerberoastable service accounts'
+                    Status= if ($kerberoastCount -gt 0) { 'WARN' } else { 'OK' }
+                    Details=@("Accounts with SPN: $kerberoastCount")
+                })
+
+                $asRepCount = @($summary.InactiveUsers | Where-Object { $_.DoesNotRequirePreAuth }).Count
+                $auth.Add([pscustomobject]@{
+                    Check='AS-REP roast exposure'
+                    Status= if ($asRepCount -gt 0) { 'WARN' } else { 'OK' }
+                    Details=@("Users without pre-auth: $asRepCount")
+                })
+
+                $delegationCount = @($summary.Computers | Where-Object { $_.TrustedForDelegation }).Count
+                $auth.Add([pscustomobject]@{
+                    Check='Unconstrained delegation'
+                    Status= if ($delegationCount -gt 0) { 'WARN' } else { 'OK' }
+                    Details=@("Computers trusted for delegation: $delegationCount")
+                })
+            }
+            catch {
+                $message = "Authenticated checks failed: $($_.Exception.Message)"
+                $auth.Add([pscustomobject]@{ Check='Authenticated checks'; Status='ERROR'; Details=@($message) })
+                $report.Errors += $message
+            }
+        }
+
+        $report.AuthenticatedChecks = @($auth)
+    }
+
+    $report.CompletedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+    Write-SecADTelemetry -Context $Context -Level INFO -Message 'Extended AD security checks completed.' -Data @{
+        unauthCount = @($report.UnauthenticatedChecks).Count
+        authCount = @($report.AuthenticatedChecks).Count
+        errorCount = @($report.Errors).Count
+    }
+    [pscustomobject]$report
+}
+
 function Get-SecADSummary {
     [CmdletBinding()]
     param(
@@ -380,4 +541,4 @@ function New-SecADFindings {
     @($findings)
 }
 
-Export-ModuleMember -Function Test-SecAdModuleAvailable, Get-SecADSummary, New-SecADFindings, Get-SecADExposureScore, New-SecADAttackGraph
+Export-ModuleMember -Function Test-SecAdModuleAvailable, Get-SecADSummary, New-SecADFindings, Get-SecADExposureScore, New-SecADAttackGraph, Invoke-SecADSecurityChecks

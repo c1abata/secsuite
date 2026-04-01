@@ -36,3 +36,29 @@ Describe 'AD exposure scoring' {
         $score.Rating | Should -Not -BeNullOrEmpty
     }
 }
+
+Describe 'Extended AD security checks' {
+    It 'returns structured output when only unauthenticated checks are requested' {
+        Mock Resolve-DnsName {
+            @(
+                [pscustomobject]@{ NameHost = 'dc01.contoso.local' }
+            )
+        }
+
+        Mock New-SecLdapConnection {
+            $conn = [pscustomobject]@{}
+            $conn | Add-Member -MemberType ScriptMethod -Name Dispose -Value { }
+            $conn
+        }
+
+        Mock Get-SecLdapEntries {
+            @([pscustomobject]@{ Attributes = @{ defaultNamingContext = @('DC=contoso,DC=local') } })
+        }
+
+        $result = Invoke-SecADSecurityChecks -Domain 'contoso.local' -UnauthenticatedOnly
+
+        $result.Domain | Should -Be 'contoso.local'
+        @($result.UnauthenticatedChecks).Count | Should -BeGreaterThan 0
+        @($result.AuthenticatedChecks).Count | Should -Be 0
+    }
+}

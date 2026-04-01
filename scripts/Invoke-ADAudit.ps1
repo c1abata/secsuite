@@ -18,12 +18,21 @@ Write-SecLog -Context $ctx -Area 'ADAudit' -Message 'Starting AD audit.' -Data @
 
 $audit = Get-SecADSummary -Config $ctx.Config.ADAudit -DomainController $DomainController -Credential $Credential -UseLdaps:$UseLdaps
 $findings = New-SecADFindings -AuditData $audit
+$extendedChecks = $null
+
+if (-not [string]::IsNullOrWhiteSpace($audit.DNSRoot)) {
+    $extendedChecks = Invoke-SecADSecurityChecks -Domain $audit.DNSRoot -DomainController $DomainController -Credential $Credential -Context $ctx
+}
+else {
+    Write-SecLog -Context $ctx -Level 'WARN' -Area 'ADAudit' -Message 'Extended AD security checks skipped because DNSRoot is unavailable.'
+}
 
 $report = [pscustomobject]@{
-    Context  = $ctx
-    ADAudit  = $audit
-    Findings = @($findings)
-    Safety   = [pscustomobject]@{
+    Context          = $ctx
+    ADAudit          = $audit
+    ADAuditExtended  = $extendedChecks
+    Findings         = @($findings)
+    Safety           = [pscustomobject]@{
         DeniedCategories = @(Get-SecDeniedCategories)
     }
 }
