@@ -42,6 +42,7 @@ modules/Safety/          guardrail e policy difensive
 modules/Inventory/       inventory locale host e software
 modules/PassiveNetwork/  raccolta passiva di dati di rete
 modules/ADAudit/         audit AD non distruttivo
+modules/ThreatValidation/ orchestrazione threat-led difensiva (no exploit)
 scripts/                 entry point operativi
 tests/unit/              test Pester sicuri e dimostrativi
 docs/                    preparazione ambiente, safety model, compliance
@@ -77,3 +78,26 @@ Ogni esecuzione produce file JSON con:
 ## Note operative
 
 La suite è adatta a laboratori, assessment autorizzati, verifiche di hardening e audit difensivi. Non è una piattaforma di red team né una suite di exploitation.
+
+## Threat-led validation difensiva
+
+Per integrare le richieste operative (NIS2/DORA, controlli infrastrutturali, focus Windows/Linux/DB) mantenendo una postura difensiva:
+
+- i profili sono eseguibili in PowerShell
+- le scansioni Nmap usano sempre `--disable-arp-ping`
+- non sono presenti exploit o brute-force: solo discovery, hardening check e raccolta evidenze
+
+Profili disponibili in `Invoke-ThreatValidation.ps1`:
+
+- `ResilienceSnmp`
+- `IdentityAccess`
+- `WindowsProtocol`
+- `UnixExposure`
+- `MssqlAudit`
+- `WebTlsBaseline`
+
+Esecuzione reale (non dry-run):
+
+```powershell
+pwsh -NoProfile -File .\scripts\Invoke-ThreatValidation.ps1 -OutputPath .\output -TargetsPath .\targets.txt -ExcludePath .\exclude.txt -Profile MssqlAudit -Execute
+```
