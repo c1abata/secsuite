@@ -1,6 +1,6 @@
 @{
     SuiteName = 'SecSuite'
-    Version = '0.2.0'
+    Version = '0.4.0'
     DefaultOutputPath = '.\\output'
     LogFileName = 'execution.log'
     LogJsonFileName = 'execution.ndjson'
@@ -29,5 +29,18 @@
             'Print Operators'
         )
         InactiveUserDays = 90
+    }
+    Workflow = @{
+        DefaultAssessmentType = 'VA'
+        DefaultRetentionDays = 365
+        RequireAuthorizationEvidence = $true
+        RequireRulesOfEngagement = $true
+        RequireScopeEvidence = $true
+        AllowedAssessmentTypes = @(
+            'VA',
+            'PT',
+            'VA-PT',
+            'AD-AUDIT'
+        )
     }
 }

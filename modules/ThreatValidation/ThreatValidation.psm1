@@ -42,7 +42,7 @@ function New-SecSafeNmapPlan {
     )
 
     $common = '-Pn --disable-arp-ping'
-    $excludeArg = if ($ExcludeFile) { "--excludefile \"$ExcludeFile\"" } else { '' }
+    $excludeArg = if ($ExcludeFile) { "--excludefile `"$ExcludeFile`"" } else { '' }
 
     if (-not (Test-Path -LiteralPath $OutputDirectory)) {
         New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null

@@ -43,6 +43,7 @@ modules/Inventory/       inventory locale host e software
 modules/PassiveNetwork/  raccolta passiva di dati di rete
 modules/ADAudit/         audit AD non distruttivo
 modules/ThreatValidation/ orchestrazione threat-led difensiva (no exploit)
+modules/Workflow/        blocchi legali, compliance gate e workflow VA/PT
 scripts/                 entry point operativi
 tests/unit/              test Pester sicuri e dimostrativi
 docs/                    preparazione ambiente, safety model, compliance
@@ -56,12 +57,14 @@ docs/                    preparazione ambiente, safety model, compliance
 pwsh -NoProfile -File .\\scripts\\Invoke-EnvironmentCheck.ps1
 pwsh -NoProfile -File .\\scripts\\Invoke-PassiveAssessment.ps1 -OutputPath .\\output
 pwsh -NoProfile -File .\\scripts\\Invoke-ADAudit.ps1 -OutputPath .\\output
+pwsh -NoProfile -File .\\scripts\\Invoke-VaPtWorkflow.ps1 -OutputPath .\\output -AssessmentType VA -AuthorizationPath .\\evidence\\authorization.txt -RulesOfEngagementPath .\\evidence\\roe.txt -ScopePath .\\evidence\\scope.txt -TargetsPath .\\targets.txt
 Invoke-Pester -Path .\\tests\\unit
 ```
 
 ## Principi di progetto
 
 - moduli piccoli e leggibili
+- flussi autorizzati e legal-compliant prima di ogni esecuzione attiva
 - output deterministico
 - nessuna dipendenza offensiva
 - fail closed: ciò che non è marcato sicuro viene negato
@@ -124,5 +127,21 @@ Profili disponibili in `Invoke-ThreatValidation.ps1`:
 Esecuzione reale (non dry-run):
 
 ```powershell
-pwsh -NoProfile -File .\scripts\Invoke-ThreatValidation.ps1 -OutputPath .\output -TargetsPath .\targets.txt -ExcludePath .\exclude.txt -Profile MssqlAudit -Execute
+pwsh -NoProfile -File .\scripts\Invoke-ThreatValidation.ps1 -OutputPath .\output -TargetsPath .\targets.txt -ExcludePath .\exclude.txt -AuthorizationPath .\evidence\authorization.txt -RulesOfEngagementPath .\evidence\roe.txt -ScopePath .\evidence\scope.txt -Profile MssqlAudit -Execute
 ```
+
+## Workflow VA/PT legal-compliant
+
+Il nuovo entrypoint `Invoke-VaPtWorkflow.ps1` unifica:
+
+- verifiche legali minime prima dell'esecuzione
+- inventory e passive assessment
+- threat validation con profili safe-by-default
+- audit AD opzionale
+- report consolidato con engagement, confini operativi e mapping compliance
+
+Documentazione correlata:
+
+- `docs/va-pt-legal-workflow.md`
+- `docs/threat-model.md`
+- `devsecops-review-secsuite.md`

@@ -4,6 +4,46 @@ function Get-SecSuiteRoot {
     (Resolve-Path (Join-Path $PSScriptRoot '..\\..')).Path
 }
 
+function Get-SecHostName {
+    [CmdletBinding()]
+    param()
+
+    if (-not [string]::IsNullOrWhiteSpace($env:COMPUTERNAME)) {
+        return $env:COMPUTERNAME
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($env:HOSTNAME)) {
+        return $env:HOSTNAME
+    }
+
+    try {
+        [System.Net.Dns]::GetHostName()
+    }
+    catch {
+        'unknown-host'
+    }
+}
+
+function Get-SecCurrentUserName {
+    [CmdletBinding()]
+    param()
+
+    try {
+        return [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    }
+    catch {
+        if (-not [string]::IsNullOrWhiteSpace($env:USERNAME)) {
+            return $env:USERNAME
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($env:USER)) {
+            return $env:USER
+        }
+    }
+
+    'unknown-user'
+}
+
 function Import-SecSuiteConfig {
     $configPath = Join-Path (Get-SecSuiteRoot) 'config\\suite.config.psd1'
     if (-not (Test-Path -LiteralPath $configPath)) {
@@ -21,21 +61,75 @@ function New-SecSuiteRunContext {
         $OutputPath = $config.DefaultOutputPath
     }
 
-    if (-not (Test-Path -LiteralPath $OutputPath)) {
-        New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
-    }
+    $resolvedOutput = Resolve-SecPath -Path $OutputPath -CreateDirectory
+    $hostname = Get-SecHostName
+    $userName = Get-SecCurrentUserName
 
-    $resolvedOutput = (Resolve-Path $OutputPath).Path
     [pscustomobject]@{
         SuiteName  = $config.SuiteName
         Version    = $config.Version
-        Hostname   = $env:COMPUTERNAME
-        UserName   = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        Hostname   = $hostname
+        UserName   = $userName
         UtcStarted = (Get-Date).ToUniversalTime().ToString('o')
         OutputPath = $resolvedOutput
         SessionId  = ([guid]::NewGuid()).Guid
         Config     = $config
     }
+}
+
+function Resolve-SecPath {
+    [CmdletBinding()]
+    param(
+        [string]$Path,
+        [switch]$ExpectFile,
+        [switch]$ExpectDirectory,
+        [switch]$Optional,
+        [switch]$CreateDirectory
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        if ($Optional) {
+            return $null
+        }
+
+        throw 'A required path parameter is empty or missing.'
+    }
+
+    try {
+        $fullPath = [System.IO.Path]::GetFullPath($Path)
+    }
+    catch {
+        throw "Invalid path '$Path'. $($_.Exception.Message)"
+    }
+
+    if ($CreateDirectory) {
+        if (-not (Test-Path -LiteralPath $fullPath)) {
+            New-Item -Path $fullPath -ItemType Directory -Force | Out-Null
+        }
+        elseif (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+            throw "Expected a directory path but found a non-directory item: $fullPath"
+        }
+
+        return (Resolve-Path -LiteralPath $fullPath).Path
+    }
+
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        if ($Optional) {
+            return $null
+        }
+
+        throw "Path not found: $fullPath"
+    }
+
+    if ($ExpectFile -and -not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+        throw "Expected a file path but found a different item type: $fullPath"
+    }
+
+    if ($ExpectDirectory -and -not (Test-Path -LiteralPath $fullPath -PathType Container)) {
+        throw "Expected a directory path but found a different item type: $fullPath"
+    }
+
+    (Resolve-Path -LiteralPath $fullPath).Path
 }
 
 function Initialize-SecSuiteLogging {
@@ -92,6 +186,26 @@ function Write-SecSuiteJson {
     }
     $InputObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
     Get-Item -LiteralPath $Path
+}
+
+function Invoke-SecOperation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Context,
+        [Parameter(Mandatory)][string]$Area,
+        [Parameter(Mandatory)][scriptblock]$ScriptBlock,
+        [string]$FailureMessage = 'Operation failed.'
+    )
+
+    try {
+        & $ScriptBlock
+    }
+    catch {
+        Write-SecLog -Context $Context -Level 'ERROR' -Area $Area -Message $FailureMessage -Data @{
+            error = $_.Exception.Message
+        }
+        throw
+    }
 }
 
 function ConvertTo-SecXmlString {
@@ -175,4 +289,4 @@ function Export-SecSuiteReportSet {
     }
 }
 
-Export-ModuleMember -Function Get-SecSuiteRoot, Import-SecSuiteConfig, New-SecSuiteRunContext, Initialize-SecSuiteLogging, Write-SecLog, Write-SecSuiteJson, ConvertTo-SecXmlString, ConvertTo-SecHtml, Export-SecSuiteReportSet
+Export-ModuleMember -Function Get-SecSuiteRoot, Get-SecHostName, Get-SecCurrentUserName, Import-SecSuiteConfig, Resolve-SecPath, New-SecSuiteRunContext, Initialize-SecSuiteLogging, Write-SecLog, Write-SecSuiteJson, Invoke-SecOperation, ConvertTo-SecXmlString, ConvertTo-SecHtml, Export-SecSuiteReportSet

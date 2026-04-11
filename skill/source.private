@@ -1,0 +1,167 @@
+
+
+
+
+File 1: Network Security and Monitoring (Italian PA Context).md
+
+Skill: Network Security, Segmentation, and GDPR-Compliant Monitoring
+
+Foundational Knowledge:
+
+    Italian PA Network Architecture: Understanding of the SPC (Sistema Pubblico di Connettività) and migration toward cloud connectivity models.
+
+    ACN Perimetro di Sicurezza Nazionale Cibernetica (PSNC): Identification of which assets (if any) fall under the notification obligation for critical networks.
+
+    GDPR Art. 32 (Security of Processing): Requirement for network segregation to prevent unauthorized access to personal data (e.g., separating Anagrafe Tributaria traffic from guest Wi-Fi).
+
+    Protocols: Deep understanding of protocols used in legacy Italian PA systems (e.g., CIE login flows, SPID authentication traffic over SAML/HTTPS).
+
+Tools and Practical Competencies:
+
+    IDS/IPS for Public Administration: Configuration of Suricata with specific rulesets for Italian threat actors targeting local government.
+
+    Ntopng/nProbe: NetFlow analysis to verify that PagoPA or IO App backend calls originate only from authorized application servers.
+
+    Wireshark/Tcpdump: Detection of unencrypted Codice Fiscale transmission over the wire (strict GDPR violation).
+
+    Key Activities:
+
+        Ensure VLAN segmentation between the "Ufficio Protocollo" (document management network) and "Biblioteca Pubblica" (public internet access).
+
+        Monitor for anomalous RDP connections from external IPs (common entry vector in ransomware attacks on Italian municipalities).
+
+        Log retention policy aligned with Garante Privacy guidelines: Network flow data retention limited strictly to the time necessary for security purposes (max 6-12 months without specific justification).
+
+File 2: Web Application Security (Local Government Services).md
+
+Skill: Securing Municipal Portals, SPID/CIE Authentication, and GDPR Data Subject Rights Portals
+
+Foundational Knowledge:
+
+    Italian Digital Identity Ecosystem: Security analysis of SPID (SAML 2.0) and CIE ID (OIDC) integration endpoints.
+
+    GDPR Art. 25 (Data Protection by Design and by Default): Preventing data leakage via insecure direct object references (IDOR) in online "Pratiche Edilizie" or "Iscrizione Scuola" portals.
+
+    AgID Guidelines: Compliance with Linee Guida AgID for the development of secure software in Public Administration.
+
+    OWASP API Security Top 10: Critical for the PDND (Piattaforma Digitale Nazionale Dati) interoperability APIs.
+
+Tools and Practical Competencies:
+
+    Burp Suite / ZAP: Intercepting and modifying requests to municipal websites (e.g., bypassing filters on Segnalazioni Online forms).
+
+    FFUF / Dirbuster: Discovery of exposed administrative panels (/gestione-istanze, /admin-pa) on subdomains of *.gov.it.
+
+    SSL Labs / Testssl.sh: Verification of TLS configuration on institutional portals (AgID requirement for minimum TLS 1.2, recommended 1.3).
+
+    Key Activities:
+
+        GDPR Specific Test: Verify that the response body to a citizen's login does NOT contain sensitive Codice Fiscale when only the name is requested by the frontend (Data Minimization).
+
+        Access Control Audit: Test if Citizen A can view the IMU payment history of Citizen B by changing an incremental numeric ID in the URL (?id_contribuente=12345).
+
+File 3: Cloud Security (Polo Strategico Nazionale & GDPR).md
+
+Skill: Secure Migration to PSN (Polo Strategico Nazionale) and Qualified Cloud Providers
+
+Foundational Knowledge:
+
+    Qualification Criteria: Understanding of ACN Cloud Qualification (Qualificazione dei servizi cloud per la PA - QI/Q2/Q3).
+
+    Data Sovereignty: Strict adherence to Art. 46 GDPR regarding data transfer outside the EU/EEA; verification that all infrastructure resides within Italian/European data centers.
+
+    GDPR Art. 28 (Data Processing Agreement): Ability to audit the Responsabile del Trattamento (Cloud Provider) contract for security clauses.
+
+    Determina AgID 628/2021: Security requirements for cloud services used by PA.
+
+Tools and Practical Competencies:
+
+    Prowler / ScoutSuite: Cloud Security Posture Management (CSPM) scan against AWS/Azure/Oracle Cloud environments to detect misconfigurations that would violate ACN's Minimum Measures.
+
+    IaC Scanning (Checkov / tfsec): Prevent deployment of S3 Buckets / Blob Containers with public-read ACL containing Backup di Database Tributi.
+
+    Key Activities:
+
+        Encryption Verification: Confirm that all backups containing personal data are encrypted with keys managed in HSM or KMS under the exclusive control of the Public Administration.
+
+        IAM Hygiene: Revoke permanent access keys and enforce Temporary Credentials for administrators managing infrastructure (AgID requirement for privileged account protection).
+
+File 4: Vulnerability Assessment (ACN Minimum Measures & GDPR DPIA).md
+
+Skill: Risk Assessment and Compliance with Italian Minimum ICT Security Measures (Misure Minime ACN)
+
+Foundational Knowledge:
+
+    ACN Minimum Measures: Detailed knowledge of the Misure Minime di Sicurezza ICT per le Pubbliche Amministrazioni (Circolare ACN 1/2019 and subsequent updates).
+
+    GDPR Art. 35 (DPIA): Conducting a Data Protection Impact Assessment (Valutazione d'Impatto) when introducing new security tools or vulnerability scanners that process metadata of employees/citizens.
+
+    NIS 2 Transposition (D.Lgs. 138/2024): Reporting obligations for incidents affecting essential services provided by the municipality.
+
+Tools and Practical Competencies:
+
+    Vulnerability Scanning: Use of Greenbone/OpenVAS or Nessus configured with compliance checks for CIS Benchmarks tailored to Italian PA environments (Windows Server with Carta Nazionale dei Servizi middleware).
+
+    Active Directory Security: Use of PingCastle and BloodHound to identify paths to Domain Admin that could be exploited via Pass-the-Hash (very common in under-staffed municipal IT departments).
+
+    Key Activities:
+
+        ACN Compliance Scan: Verify ABSC 1 (Inventory of Authorized Devices) and ABSC 4 (Dedicated Admin Workstations) implementation status.
+
+        GDPR-Focused Scan: Identify unencrypted database backups stored on NAS/SAN devices accessible via SMB v1.
+
+        Remediation Tracking: Create a Risk Register linked to the annual PIAO (Piano Integrato di Attività e Organizzazione) cybersecurity section.
+
+File 5: Incident Response & GDPR Breach Notification (72h Deadline).md
+
+Skill: Managing Ransomware and Data Breaches in Compliance with Art. 33 GDPR and ACN Reporting
+
+Foundational Knowledge:
+
+    GDPR Art. 33 (Notification Timeline): Absolute requirement to notify the Garante per la Protezione dei Dati Personali within 72 hours of becoming aware of a personal data breach.
+
+    Italian Criminal Code (Art. 615-ter/ter.1): Legal implications of unauthorized access to computer systems and data exfiltration.
+
+    CSIRT Italia: Role of the Italian Computer Security Incident Response Team in coordinating national response.
+
+    PEC (Certified Email): Legal validity and forensic preservation of incident communications sent via PEC.
+
+Tools and Practical Competencies:
+
+    Triage & Containment: Immediate isolation of compromised endpoints using EDR policies (e.g., Microsoft Defender for Endpoint network isolation) to stop lateral movement from the Ufficio Anagrafe to the Ufficio Tributi.
+
+    Forensic Collection: Use of Velociraptor or KAPE to acquire volatile data and registry hives before powering off a server, ensuring chain of custody for potential judicial proceedings.
+
+    Communication Template: Use of the Garante Privacy's specific form for data breach notifications.
+
+    Key Activities:
+
+        Breach Scoping: Determine exactly whose data was exfiltrated (Residents? Employees? Minors?) to trigger specific notification requirements (Art. 34 - Communication to Data Subjects).
+
+        Ransomware Playbook: Executing a specific Playbook for Ransomware in Italian Municipalities, including liaison with Agenzia delle Entrate if tax collection systems are impacted.
+
+File 6: Security Operations & Forensics (GDPR Accountability & Log Management).md
+
+Skill: Centralized Logging, Auditing, and Demonstrating GDPR Compliance (Accountability Principle)
+
+Foundational Knowledge:
+
+    GDPR Art. 5.2 (Accountability): The PA must demonstrate compliance. Logs are the primary evidence.
+
+    Provvedimento Garante Privacy (Log Management): Guidelines on the retention period of system logs (normally not exceeding 6-24 months for administrative logs, longer only for specific security incident investigations).
+
+    CAD (Codice dell'Amministrazione Digitale): Legal value of electronic documents and timestamps.
+
+Tools and Practical Competencies:
+
+    SIEM Configuration: Deploying Wazuh (Open Source) or Splunk to collect logs from Domain Controllers, Firewall di Sede Centrale, and Sistemi di Protocollo Informatico.
+
+    Sysmon / Auditd: Configuration of specific logging for Process Creation and File Access to track who accessed the cartella_condivisa_delibere containing sensitive personnel data.
+
+    Key Activities:
+
+        Privileged Access Monitoring: Auditing all actions performed by members of the Domain Admins group. Logs must be tamper-proof and sent to a separate Log Collector not accessible to those same admins.
+
+        GDPR Audit Readiness: Generating a report showing: *"On 2026-04-10 at 10:00, Employee X accessed Record Y (Codice Fiscale Z). Access was authorized based on the task of processing IMU rebates."*
+
+        Forensic Timeline: In case of an investigation by the Corte dei Conti or Guardia di Finanza regarding a data leak, ability to reconstruct the exact sequence of events using Plaso/Timesketch.
