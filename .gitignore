@@ -88,3 +88,4 @@ todo.list
 *.cer
 *.snk
 .DS_Store
+.codex
