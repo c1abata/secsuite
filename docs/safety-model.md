@@ -1,11 +1,24 @@
-# Safety model
+# TCPENT Safety Model
 
-SecSuite is intentionally defensive and fail-closed.
+TCPENT is intentionally defensive, read-only and fail-closed.
 
-## Design rules
-- only passive collection and review
-- no state changes on assessed targets
-- policy-controlled execution
-- denied categories are enforced in code by the Safety module
+## Non-negotiable controls
 
-The Safety module blocks disallowed actions by design.
+- No exploit execution.
+- No brute-force, password attacks, spraying or coercion.
+- No remote command execution on targets.
+- No target state change.
+- No persistence mechanisms.
+
+## Allowed behavior
+
+- Passive discovery and inventory.
+- Read-only protocol exposure checks.
+- Defensive AD audit.
+- Deterministic reporting with audit trail and hash chain.
+
+## Enforcement strategy
+
+- Safety module blocks denied categories at runtime.
+- Workflow compliance gate blocks/limits execution when legal evidence is missing.
+- Threat validation profiles enforce safe nmap arguments (`-Pn --disable-arp-ping`).

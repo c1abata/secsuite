@@ -11,8 +11,8 @@ param(
     [string]$DataHandlingPath,
     [string]$TicketId,
     [string]$ClientName = 'AuthorizedClient',
-    [ValidateSet('ResilienceSnmp','IdentityAccess','WindowsProtocol','UnixExposure','MssqlAudit','WebTlsBaseline')]
-    [string]$Profile = 'IdentityAccess',
+    [ValidateSet('NetworkEquipment','DomainControllerExposure','LinuxSurface','DatabaseExposure','WebApplication','IoTSurface','PrintInfrastructure','NasStorage','AccessControlSystems','HybridFullStack','ResilienceSnmp','IdentityAccess','WindowsProtocol','UnixExposure','MssqlAudit','WebTlsBaseline')]
+    [string]$Profile = 'HybridFullStack',
     [int]$RetentionDays = 365,
     [switch]$ExecuteThreatValidation,
     [switch]$IncludeADAudit,
@@ -23,13 +23,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-Import-Module (Join-Path $root 'modules\Core\Core.psm1') -Force
-Import-Module (Join-Path $root 'modules\Safety\Safety.psm1') -Force
-Import-Module (Join-Path $root 'modules\Inventory\Inventory.psm1') -Force
-Import-Module (Join-Path $root 'modules\PassiveNetwork\PassiveNetwork.psm1') -Force
-Import-Module (Join-Path $root 'modules\ADAudit\ADAudit.psm1') -Force
-Import-Module (Join-Path $root 'modules\ThreatValidation\ThreatValidation.psm1') -Force
-Import-Module (Join-Path $root 'modules\Workflow\Workflow.psm1') -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Core' 'Core.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Safety' 'Safety.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Inventory' 'Inventory.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'PassiveNetwork' 'PassiveNetwork.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'ADAudit' 'ADAudit.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'StackMatrix' 'StackMatrix.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'ThreatValidation' 'ThreatValidation.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Workflow' 'Workflow.psm1')) -Force
 
 try {
     $ctx = New-SecSuiteRunContext -OutputPath $OutputPath
@@ -66,20 +67,24 @@ try {
         throw "Workflow blocked by compliance gate. Status: $($compliance.Status)"
     }
 
+    $profileResolved = Resolve-SecStackProfile -Name $Profile
+
     Write-SecLog -Context $ctx -Area 'Workflow' -Message 'Starting VA/PT workflow.' -Data @{
         assessmentType = $AssessmentType
         executeThreatValidation = [bool]$ExecuteThreatValidation
         includeADAudit = [bool]$IncludeADAudit
-        profile = $Profile
+        profile = $profileResolved.Name
         complianceStatus = $compliance.Status
     }
 
     $report = Invoke-SecOperation -Context $ctx -Area 'Workflow' -FailureMessage 'VA/PT workflow failed.' -ScriptBlock {
         $targets = @(Get-SecTargetList -Path $resolvedTargetsPath -ExcludePath $resolvedExcludePath)
         $sessionFolder = Join-Path $ctx.OutputPath ("workflow_{0}_{1}" -f $AssessmentType.ToLowerInvariant(), (Get-Date -Format 'yyyyMMdd_HHmmss'))
-        $plan = @(New-SecSafeNmapPlan -Profile $Profile -TargetFile $resolvedTargetsPath -ExcludeFile $resolvedExcludePath -OutputDirectory $sessionFolder)
-        $scan = @(Invoke-SecSafeScanPlan -Plan $plan -Execute:$ExecuteThreatValidation)
-        $findings = @(New-SecThreatFindings -ScanResults $scan)
+
+        $plan = @(New-SecSafeNmapPlan -Profile $profileResolved.Name -TargetFile $resolvedTargetsPath -ExcludeFile $resolvedExcludePath -OutputDirectory $sessionFolder -Config $ctx.Config.ThreatValidation)
+        $scan = @(Invoke-SecSafeScanPlan -Plan $plan -Execute:$ExecuteThreatValidation -Context $ctx)
+        $threatFindings = @(New-SecThreatFindings -ScanResults $scan)
+        $coverage = New-SecCoverageSummary -Profile $profileResolved.Name
 
         $adAudit = $null
         $adFindings = @()
@@ -93,10 +98,19 @@ try {
             Engagement = $engagement
             Compliance = $compliance
             Boundaries = Get-SecExecutionBoundaries
+            Lifecycle = [pscustomobject]@{
+                Preparation = 'Completed'
+                ScopeValidation = if ($compliance.Status -eq 'Approved') { 'Completed' } else { 'ReviewRequired' }
+                PassiveDiscovery = 'Completed'
+                ThreatValidation = if ($ExecuteThreatValidation) { 'Executed' } else { 'DryRun' }
+                Analysis = 'Completed'
+                Reporting = 'Completed'
+            }
             Environment = [pscustomobject]@{
                 PowerShellVersion = $PSVersionTable.PSVersion.ToString()
                 Hostname = $ctx.Hostname
                 UserName = $ctx.UserName
+                Platform = if ($IsWindows) { 'Windows' } else { 'Linux' }
             }
             PassiveAssessment = [pscustomobject]@{
                 Inventory = Get-SecHostInventory
@@ -105,11 +119,13 @@ try {
             }
             ThreatValidation = [pscustomobject]@{
                 Targets = $targets
-                Profile = $Profile
+                Profile = $profileResolved.Name
+                ProfileInput = $Profile
+                Coverage = $coverage
                 ExecuteMode = [bool]$ExecuteThreatValidation
                 Plan = $plan
                 ScanResults = $scan
-                Findings = $findings
+                Findings = $threatFindings
                 SessionFolder = $sessionFolder
             }
             ADAudit = $adAudit
@@ -123,6 +139,7 @@ try {
         threatFindings = @($report.ThreatValidation.Findings).Count
         adFindings = @($report.ADAuditFindings).Count
     }
+
     $report
 }
 catch {

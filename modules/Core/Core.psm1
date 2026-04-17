@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 
 function Get-SecSuiteRoot {
-    (Resolve-Path (Join-Path $PSScriptRoot '..\\..')).Path
+    (Resolve-Path (Join-Path (Join-Path $PSScriptRoot '..') '..')).Path
 }
 
 function Get-SecHostName {
@@ -17,10 +17,10 @@ function Get-SecHostName {
     }
 
     try {
-        [System.Net.Dns]::GetHostName()
+        return [System.Net.Dns]::GetHostName()
     }
     catch {
-        'unknown-host'
+        return 'unknown-host'
     }
 }
 
@@ -39,16 +39,46 @@ function Get-SecCurrentUserName {
         if (-not [string]::IsNullOrWhiteSpace($env:USER)) {
             return $env:USER
         }
+
+        return 'unknown-user'
+    }
+}
+
+function Get-SecSha256Hex {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$InputText)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($InputText)
+        $hash = $sha.ComputeHash($bytes)
+        -join ($hash | ForEach-Object { $_.ToString('x2') })
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function Get-SecFileSha256 {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Cannot hash missing file: $Path"
     }
 
-    'unknown-user'
+    (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
 function Import-SecSuiteConfig {
-    $configPath = Join-Path (Get-SecSuiteRoot) 'config\\suite.config.psd1'
+    [CmdletBinding()]
+    param()
+
+    $configPath = Join-Path (Get-SecSuiteRoot) (Join-Path 'config' 'suite.config.psd1')
     if (-not (Test-Path -LiteralPath $configPath)) {
         throw "Config file not found: $configPath"
     }
+
     Import-PowerShellDataFile -Path $configPath
 }
 
@@ -62,18 +92,17 @@ function New-SecSuiteRunContext {
     }
 
     $resolvedOutput = Resolve-SecPath -Path $OutputPath -CreateDirectory
-    $hostname = Get-SecHostName
-    $userName = Get-SecCurrentUserName
 
     [pscustomobject]@{
         SuiteName  = $config.SuiteName
         Version    = $config.Version
-        Hostname   = $hostname
-        UserName   = $userName
+        Hostname   = Get-SecHostName
+        UserName   = Get-SecCurrentUserName
         UtcStarted = (Get-Date).ToUniversalTime().ToString('o')
         OutputPath = $resolvedOutput
         SessionId  = ([guid]::NewGuid()).Guid
         Config     = $config
+        BrandStyle = $config.BrandStyle
     }
 }
 
@@ -107,7 +136,7 @@ function Resolve-SecPath {
             New-Item -Path $fullPath -ItemType Directory -Force | Out-Null
         }
         elseif (-not (Test-Path -LiteralPath $fullPath -PathType Container)) {
-            throw "Expected a directory path but found a non-directory item: $fullPath"
+            throw "Expected directory but found a non-directory item: $fullPath"
         }
 
         return (Resolve-Path -LiteralPath $fullPath).Path
@@ -132,18 +161,62 @@ function Resolve-SecPath {
     (Resolve-Path -LiteralPath $fullPath).Path
 }
 
+function Add-SecHashChainEntry {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Context,
+        [Parameter(Mandatory)][string]$EventType,
+        [Parameter(Mandatory)][object]$Payload
+    )
+
+    if (-not $Context.HashChainPath) {
+        return
+    }
+
+    $prevHash = if ($Context.PSObject.Properties.Name -contains 'LastHash' -and -not [string]::IsNullOrWhiteSpace($Context.LastHash)) {
+        $Context.LastHash
+    }
+    else {
+        'GENESIS'
+    }
+
+    $payloadJson = $Payload | ConvertTo-Json -Depth 12 -Compress
+    $hash = Get-SecSha256Hex -InputText ("{0}|{1}|{2}" -f $prevHash, $EventType, $payloadJson)
+
+    $entry = [ordered]@{
+        timestamp = (Get-Date).ToUniversalTime().ToString('o')
+        eventType = $EventType
+        sessionId = $Context.SessionId
+        previousHash = $prevHash
+        hash = $hash
+        payload = $Payload
+    }
+
+    Add-Content -LiteralPath $Context.HashChainPath -Value ($entry | ConvertTo-Json -Depth 12 -Compress) -Encoding UTF8
+    $Context | Add-Member -NotePropertyName LastHash -NotePropertyValue $hash -Force
+}
+
 function Initialize-SecSuiteLogging {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Context)
 
     $logPath = Join-Path $Context.OutputPath $Context.Config.LogFileName
     $jsonLogPath = Join-Path $Context.OutputPath $Context.Config.LogJsonFileName
+    $auditTrailPath = Join-Path $Context.OutputPath $Context.Config.AuditTrailFileName
+    $hashChainPath = Join-Path $Context.OutputPath $Context.Config.HashChainFileName
 
-    if (-not (Test-Path -LiteralPath $logPath)) { New-Item -Path $logPath -ItemType File -Force | Out-Null }
-    if (-not (Test-Path -LiteralPath $jsonLogPath)) { New-Item -Path $jsonLogPath -ItemType File -Force | Out-Null }
+    foreach ($path in @($logPath, $jsonLogPath, $auditTrailPath, $hashChainPath)) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            New-Item -Path $path -ItemType File -Force | Out-Null
+        }
+    }
 
     $Context | Add-Member -NotePropertyName LogPath -NotePropertyValue $logPath -Force
     $Context | Add-Member -NotePropertyName JsonLogPath -NotePropertyValue $jsonLogPath -Force
+    $Context | Add-Member -NotePropertyName AuditTrailPath -NotePropertyValue $auditTrailPath -Force
+    $Context | Add-Member -NotePropertyName HashChainPath -NotePropertyValue $hashChainPath -Force
+    $Context | Add-Member -NotePropertyName LastHash -NotePropertyValue '' -Force
+
     Write-SecLog -Context $Context -Level 'INFO' -Area 'Core' -Message 'Logging initialized.'
     $Context
 }
@@ -152,39 +225,77 @@ function Write-SecLog {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$Context,
-        [ValidateSet('DEBUG','INFO','WARN','ERROR')] [string]$Level = 'INFO',
-        [Parameter(Mandatory)] [string]$Area,
-        [Parameter(Mandatory)] [string]$Message,
+        [ValidateSet('DEBUG','INFO','WARN','ERROR')][string]$Level = 'INFO',
+        [Parameter(Mandatory)][string]$Area,
+        [Parameter(Mandatory)][string]$Message,
         [hashtable]$Data
     )
 
-    $ts = (Get-Date).ToUniversalTime().ToString('o')
-    $line = "[{0}] [{1}] [{2}] {3}" -f $ts, $Level, $Area, $Message
+    $timestamp = (Get-Date).ToUniversalTime().ToString('o')
+    $line = "[{0}] [{1}] [{2}] {3}" -f $timestamp, $Level, $Area, $Message
     Add-Content -LiteralPath $Context.LogPath -Value $line -Encoding UTF8
 
     $payload = [ordered]@{
-        timestamp = $ts
+        timestamp = $timestamp
         level = $Level
         area = $Area
         message = $Message
         sessionId = $Context.SessionId
         hostname = $Context.Hostname
+        userName = $Context.UserName
     }
-    if ($Data) { $payload.data = $Data }
-    Add-Content -LiteralPath $Context.JsonLogPath -Value (($payload | ConvertTo-Json -Depth 8 -Compress)) -Encoding UTF8
+
+    if ($Data) {
+        $payload.data = $Data
+    }
+
+    Add-Content -LiteralPath $Context.JsonLogPath -Value ($payload | ConvertTo-Json -Depth 12 -Compress) -Encoding UTF8
+    Add-SecHashChainEntry -Context $Context -EventType 'log' -Payload $payload
+}
+
+function Write-SecAuditEvent {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Context,
+        [Parameter(Mandatory)][string]$Area,
+        [Parameter(Mandatory)][string]$Action,
+        [ValidateSet('Started','Completed','Failed','Skipped')][string]$Status,
+        [double]$DurationMs,
+        [hashtable]$Data
+    )
+
+    $entry = [ordered]@{
+        timestamp = (Get-Date).ToUniversalTime().ToString('o')
+        sessionId = $Context.SessionId
+        area = $Area
+        action = $Action
+        status = $Status
+        durationMs = $DurationMs
+        hostname = $Context.Hostname
+        userName = $Context.UserName
+    }
+
+    if ($Data) {
+        $entry.data = $Data
+    }
+
+    Add-Content -LiteralPath $Context.AuditTrailPath -Value ($entry | ConvertTo-Json -Depth 12 -Compress) -Encoding UTF8
+    Add-SecHashChainEntry -Context $Context -EventType 'audit' -Payload $entry
 }
 
 function Write-SecSuiteJson {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)] [object]$InputObject,
-        [Parameter(Mandatory)] [string]$Path
+        [Parameter(Mandatory)][object]$InputObject,
+        [Parameter(Mandatory)][string]$Path
     )
-    $dir = Split-Path -Parent $Path
-    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
-        New-Item -Path $dir -ItemType Directory -Force | Out-Null
+
+    $directory = Split-Path -Parent $Path
+    if ($directory -and -not (Test-Path -LiteralPath $directory)) {
+        New-Item -Path $directory -ItemType Directory -Force | Out-Null
     }
-    $InputObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding UTF8
+
+    $InputObject | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path -Encoding UTF8
     Get-Item -LiteralPath $Path
 }
 
@@ -197,13 +308,19 @@ function Invoke-SecOperation {
         [string]$FailureMessage = 'Operation failed.'
     )
 
+    $start = Get-Date
+    Write-SecAuditEvent -Context $Context -Area $Area -Action 'operation' -Status Started
+
     try {
-        & $ScriptBlock
+        $result = & $ScriptBlock
+        $duration = ((Get-Date) - $start).TotalMilliseconds
+        Write-SecAuditEvent -Context $Context -Area $Area -Action 'operation' -Status Completed -DurationMs $duration
+        return $result
     }
     catch {
-        Write-SecLog -Context $Context -Level 'ERROR' -Area $Area -Message $FailureMessage -Data @{
-            error = $_.Exception.Message
-        }
+        $duration = ((Get-Date) - $start).TotalMilliseconds
+        Write-SecLog -Context $Context -Level 'ERROR' -Area $Area -Message $FailureMessage -Data @{ error = $_.Exception.Message }
+        Write-SecAuditEvent -Context $Context -Area $Area -Action 'operation' -Status Failed -DurationMs $duration -Data @{ error = $_.Exception.Message }
         throw
     }
 }
@@ -212,42 +329,76 @@ function ConvertTo-SecXmlString {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$InputObject)
 
-    $json = $InputObject | ConvertTo-Json -Depth 10
+    $json = $InputObject | ConvertTo-Json -Depth 12
     $xml = New-Object System.Xml.XmlDocument
-    $decl = $xml.CreateXmlDeclaration('1.0','utf-8',$null)
-    $xml.AppendChild($decl) | Out-Null
-    $root = $xml.CreateElement('SecSuiteReport')
-    $xml.AppendChild($root) | Out-Null
+    $decl = $xml.CreateXmlDeclaration('1.0', 'utf-8', $null)
+    [void]$xml.AppendChild($decl)
+
+    $root = $xml.CreateElement('TcpentReport')
+    [void]$xml.AppendChild($root)
+
     $data = $xml.CreateCDATASection($json)
-    $root.AppendChild($data) | Out-Null
+    [void]$root.AppendChild($data)
+
     $xml.OuterXml
 }
 
 function ConvertTo-SecHtml {
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$InputObject,[string]$Title='SecSuite Report')
+    param(
+        [Parameter(Mandatory)]$InputObject,
+        [string]$Title = 'TCPENT Report'
+    )
 
-    $pretty = $InputObject | ConvertTo-Json -Depth 10
+    $pretty = $InputObject | ConvertTo-Json -Depth 12
+    $encoded = [System.Net.WebUtility]::HtmlEncode($pretty)
+
     @"
 <!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>$Title</title>
 <style>
-body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; }
-h1, h2 { margin-bottom: 8px; }
-pre { background: #f4f4f4; padding: 16px; border: 1px solid #ddd; overflow-x: auto; }
-.small { color: #666; font-size: 12px; }
+body { font-family: "JetBrains Mono", "Fira Code", Consolas, monospace; margin: 20px; background: #0f1217; color: #f2f4f8; }
+h1 { margin-bottom: 6px; }
+.small { color: #98a2b3; font-size: 12px; }
+pre { background: #151b23; border: 1px solid #273142; padding: 16px; overflow-x: auto; line-height: 1.4; }
 </style>
 </head>
 <body>
 <h1>$Title</h1>
-<p class="small">Generated at $(Get-Date -Format s) UTC</p>
-<pre>$([System.Web.HttpUtility]::HtmlEncode($pretty))</pre>
+<p class="small">Generated at $((Get-Date).ToUniversalTime().ToString('o'))</p>
+<pre>$encoded</pre>
 </body>
 </html>
 "@
+}
+
+function Get-SecHeadlessBrowserCommand {
+    [CmdletBinding()]
+    param()
+
+    $windowsCandidates = @(
+        "$env:ProgramFiles (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+        "$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe",
+        "$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe"
+    )
+
+    foreach ($candidate in $windowsCandidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return $candidate
+        }
+    }
+
+    foreach ($cmd in @('microsoft-edge','google-chrome','chromium','chromium-browser')) {
+        $found = Get-Command -Name $cmd -ErrorAction SilentlyContinue
+        if ($found) {
+            return $found.Source
+        }
+    }
+
+    return $null
 }
 
 function Export-SecSuiteReportSet {
@@ -255,38 +406,74 @@ function Export-SecSuiteReportSet {
     param(
         [Parameter(Mandatory)]$Context,
         [Parameter(Mandatory)]$ReportObject,
-        [Parameter(Mandatory)] [string]$BaseName
+        [Parameter(Mandatory)][string]$BaseName
     )
 
     $jsonPath = Join-Path $Context.OutputPath "$BaseName.json"
-    $xmlPath  = Join-Path $Context.OutputPath "$BaseName.xml"
+    $xmlPath = Join-Path $Context.OutputPath "$BaseName.xml"
     $htmlPath = Join-Path $Context.OutputPath "$BaseName.html"
-    $pdfPath  = Join-Path $Context.OutputPath "$BaseName.pdf"
+    $pdfPath = Join-Path $Context.OutputPath "$BaseName.pdf"
+    $manifestPath = Join-Path $Context.OutputPath "$BaseName.manifest.json"
 
     Write-SecSuiteJson -InputObject $ReportObject -Path $jsonPath | Out-Null
     (ConvertTo-SecXmlString -InputObject $ReportObject) | Set-Content -LiteralPath $xmlPath -Encoding UTF8
     (ConvertTo-SecHtml -InputObject $ReportObject -Title $BaseName) | Set-Content -LiteralPath $htmlPath -Encoding UTF8
 
-    $edge = @(
-        "$env:ProgramFiles (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-        "$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe",
-        "$env:ProgramFiles\\Google\\Chrome\\Application\\chrome.exe"
-    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-    if ($edge) {
-        & $edge --headless --disable-gpu "--print-to-pdf=$pdfPath" $htmlPath | Out-Null
-        Write-SecLog -Context $Context -Area 'Reporting' -Message 'PDF export attempted.' -Data @{ browser = $edge; output = $pdfPath }
+    $browser = Get-SecHeadlessBrowserCommand
+    if ($browser) {
+        try {
+            & $browser --headless --disable-gpu "--print-to-pdf=$pdfPath" $htmlPath | Out-Null
+            Write-SecLog -Context $Context -Area 'Reporting' -Message 'PDF export attempted.' -Data @{ browser = $browser; output = $pdfPath }
+        }
+        catch {
+            Write-SecLog -Context $Context -Level 'WARN' -Area 'Reporting' -Message 'PDF export failed.' -Data @{ error = $_.Exception.Message; browser = $browser }
+        }
     }
     else {
-        Write-SecLog -Context $Context -Level 'WARN' -Area 'Reporting' -Message 'PDF export skipped: no supported headless browser found.'
+        Write-SecLog -Context $Context -Level 'WARN' -Area 'Reporting' -Message 'PDF export skipped: no supported browser found.'
     }
 
-    [pscustomobject]@{
+    $reportPaths = [ordered]@{
         Json = $jsonPath
-        Xml  = $xmlPath
+        Xml = $xmlPath
         Html = $htmlPath
-        Pdf  = (Test-Path $pdfPath) ? $pdfPath : $null
+        Pdf = if (Test-Path -LiteralPath $pdfPath) { $pdfPath } else { $null }
     }
+
+    if ($Context.Config.Reports.EmitManifest) {
+        $manifest = [ordered]@{
+            suite = $Context.SuiteName
+            version = $Context.Version
+            sessionId = $Context.SessionId
+            generatedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+            files = @()
+        }
+
+        foreach ($entry in $reportPaths.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace([string]$entry.Value)) {
+                continue
+            }
+
+            $manifest.files += [pscustomobject]@{
+                type = $entry.Key
+                path = $entry.Value
+                sha256 = Get-SecFileSha256 -Path $entry.Value
+                sizeBytes = (Get-Item -LiteralPath $entry.Value).Length
+            }
+        }
+
+        $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        $reportPaths.Manifest = $manifestPath
+    }
+
+    [pscustomobject]$reportPaths
 }
 
-Export-ModuleMember -Function Get-SecSuiteRoot, Get-SecHostName, Get-SecCurrentUserName, Import-SecSuiteConfig, Resolve-SecPath, New-SecSuiteRunContext, Initialize-SecSuiteLogging, Write-SecLog, Write-SecSuiteJson, Invoke-SecOperation, ConvertTo-SecXmlString, ConvertTo-SecHtml, Export-SecSuiteReportSet
+function New-TcpentRunContext {
+    [CmdletBinding()]
+    param([string]$OutputPath)
+
+    New-SecSuiteRunContext -OutputPath $OutputPath
+}
+
+Export-ModuleMember -Function Get-SecSuiteRoot, Get-SecHostName, Get-SecCurrentUserName, Get-SecSha256Hex, Get-SecFileSha256, Import-SecSuiteConfig, Resolve-SecPath, New-SecSuiteRunContext, Initialize-SecSuiteLogging, Write-SecLog, Write-SecAuditEvent, Write-SecSuiteJson, Invoke-SecOperation, ConvertTo-SecXmlString, ConvertTo-SecHtml, Export-SecSuiteReportSet, New-TcpentRunContext

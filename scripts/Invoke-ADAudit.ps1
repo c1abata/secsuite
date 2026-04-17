@@ -8,9 +8,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-Import-Module (Join-Path $root 'modules\Core\Core.psm1') -Force
-Import-Module (Join-Path $root 'modules\ADAudit\ADAudit.psm1') -Force
-Import-Module (Join-Path $root 'modules\Safety\Safety.psm1') -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Core' 'Core.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'ADAudit' 'ADAudit.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Safety' 'Safety.psm1')) -Force
 
 try {
     $ctx = New-SecSuiteRunContext -OutputPath $OutputPath
@@ -22,7 +22,6 @@ try {
         $findings = New-SecADFindings -AuditData $audit
         $extendedChecks = $null
 
-        # Extended checks run only when the target domain can be determined safely.
         if (-not [string]::IsNullOrWhiteSpace($audit.DNSRoot)) {
             $extendedChecks = Invoke-SecADSecurityChecks -Domain $audit.DNSRoot -DomainController $DomainController -Credential $Credential -Context $ctx
         }
@@ -31,11 +30,11 @@ try {
         }
 
         [pscustomobject]@{
-            Context          = $ctx
-            ADAudit          = $audit
-            ADAuditExtended  = $extendedChecks
-            Findings         = @($findings)
-            Safety           = [pscustomobject]@{
+            Context = $ctx
+            ADAudit = $audit
+            ADAuditExtended = $extendedChecks
+            Findings = @($findings)
+            Safety = [pscustomobject]@{
                 DeniedCategories = @(Get-SecDeniedCategories)
             }
         }

@@ -1,5 +1,5 @@
 BeforeAll {
-    Import-Module "$PSScriptRoot\..\..\modules\Safety\Safety.psm1" -Force
+    Import-Module "$PSScriptRoot/../../modules/Safety/Safety.psm1" -Force
 }
 
 Describe 'Safety guardrails' {
@@ -13,5 +13,9 @@ Describe 'Safety guardrails' {
 
     It 'accepts a passive category name not on deny list' {
         { Assert-SecSafeAction -Category 'Inventory' } | Should -Not -Throw
+    }
+
+    It 'exposes allowed categories list' {
+        (Get-SecAllowedCategories).Count | Should -BeGreaterThan 0
     }
 }

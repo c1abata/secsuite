@@ -1,46 +1,32 @@
-# Threat Model
+# TCPENT Threat Model
 
-## Obiettivo
+## Goal
 
-SecSuite supporta vulnerability assessment e penetration testing **solo** in forma autorizzata, defensiva e fail-closed. Il modello di minaccia del progetto si concentra su:
+TCPENT supports vulnerability assessment and defensive penetration testing validation only when formally authorized and scoped.
 
-- uso improprio della suite al di fuori di scope approvati
-- raccolta eccessiva di dati sensibili
-- esecuzione di controlli invasivi o con side effect
-- perdita di evidenze o reporting non tracciabile
+## Primary misuse risks
 
-## Assunzioni di fiducia
+- Running the suite outside approved scope.
+- Collecting sensitive evidence without handling policy.
+- Executing invasive actions under the pretext of assessment.
+- Producing untraceable outputs that cannot be audited.
 
-- l’operatore ha autorizzazione scritta e scope approvato
-- i file di Rules of Engagement e scope sono preparati prima dell’esecuzione
-- i target sono forniti dal committente o dal team autorizzante
-- l’ambiente di esecuzione protegge gli output generati
+## Trust assumptions
 
-## Confini di sicurezza
+- Operator has formal authorization.
+- Rules of engagement and scope are approved before execution.
+- Targets are provided by authorized stakeholders.
+- Output storage is protected.
 
-- nessun exploit
-- nessun brute force o spraying
-- nessuna remote execution
-- nessun cambiamento di stato del target
-- solo discovery, audit e raccolta evidenze read-only
+## Implemented mitigations
 
-## Misure implementate
+- Compliance gate with explicit `Approved | ReviewRequired | Blocked` statuses.
+- Structured evidence checks (authorization, ROE, scope, targets, retention).
+- Operation-level logging (`operations.ndjson`) and hash chain (`hashchain.ndjson`).
+- Safe scan profiles with no offensive payloads.
 
-- compliance gate per VA/PT prima dell’esecuzione attiva
-- output deterministico con timestamp UTC, hostname e session id
-- profili threat-led con `--disable-arp-ping`
-- moduli separati per safety, reporting, AD audit e workflow
-- logging testuale e NDJSON per audit trail
+## Residual risk
 
-## Rischi residui
-
-- i profili Nmap dipendono dalla disponibilità dello strumento sull’host
-- la qualità del perimetro dipende dai file di autorizzazione e scope forniti
-- le verifiche locali inventory/passive network restano orientate a Windows
-
-## Strategia di riduzione
-
-- mantenere i controlli offensivi fuori dal codice
-- trattare come bloccante l’assenza della documentazione legale in fase execute
-- ampliare i test unitari sui casi di errore e sulle regressioni di policy
-- integrare scansioni CI per secret detection e qualità PowerShell
+- External tools (for example `nmap`) availability impacts active execution.
+- Output quality depends on target list quality.
+- AD depth depends on environment and credentials.

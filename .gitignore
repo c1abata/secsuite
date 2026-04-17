@@ -1,28 +1,38 @@
+# Runtime artifacts
 output/
 artifacts/
 reports/
-*.ndjson
+
+# Logs and transient files
 *.log
+*.ndjson
 *.tmp
 *.bak
+*.pid
+
+# Secrets and credentials
 .env
 .env.*
 *.secret
 *.secrets.*
 *.credential
 *.creds
+*.pem
 *.key
-*.pfx
+*.crt
 *.cer
+*.pfx
 *.snk
-.DS_Store
-.env
-.env.*
-.venv/
-venv/
-.vscode/
-.data/
+secrets.*
+secrets.json
 
+# Data and local databases
+*.sqlite3
+*.sql
+.data/
+data/
+
+# Python local artifacts
 __pycache__/
 *.pyc
 *.pyo
@@ -30,63 +40,24 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+.venv/
+venv/
 
-apps/frontend/node_modules/
+# Node / build artifacts
+node_modules/
 dist/
 build/
 *.egg-info/
 
-data/
-*.sqlite3
-*.sql
-*.bak
-
-*.log
-Thumbs.db
+# Editors and OS artifacts
 .DS_Store
-
-*.pem
-*.key
-*.crt
-secrets.*
-secrets.json
-*.list
-.codex
-
-# Official source material is handled as local reference input and should not be modified in place.
-ref/
-
-# Archived legacy planning and superseded documentation stays outside the active tracked docs set.
-docs/olded/
-
-# Keep checked-in VS Code tasks and launch files, ignore any other editor-local artifacts.
+Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 !.vscode/launch.json
 !.vscode/settings.json
 !.vscode/tasks.json
 
-
-dist/
-spec/
-skill/
-skill
-todo.list
-*.list
-*.private
-*.secret
-*.env
-*.log
-*.tmp
-*.bak
-*.ndjson
-*.sqlite3
-*.sql
-*.bak
-*.pem
-*.key
-*.crt
-*.cer
-*.snk
-.DS_Store
+# Project-local meta
 .codex
+*.private

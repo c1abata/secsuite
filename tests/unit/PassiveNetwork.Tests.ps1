@@ -1,5 +1,5 @@
 BeforeAll {
-    Import-Module "$PSScriptRoot\..\..\modules\PassiveNetwork\PassiveNetwork.psm1" -Force
+    Import-Module "$PSScriptRoot/../../modules/PassiveNetwork/PassiveNetwork.psm1" -Force
 }
 
 Describe 'PassiveNetwork module shape tests' {

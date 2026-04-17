@@ -1,5 +1,6 @@
 BeforeAll {
-    Import-Module "$PSScriptRoot\..\..\modules\ThreatValidation\ThreatValidation.psm1" -Force
+    Import-Module "$PSScriptRoot/../../modules/StackMatrix/StackMatrix.psm1" -Force
+    Import-Module "$PSScriptRoot/../../modules/ThreatValidation/ThreatValidation.psm1" -Force
 }
 
 Describe 'ThreatValidation module shape tests' {
@@ -8,8 +9,11 @@ Describe 'ThreatValidation module shape tests' {
     }
 
     It 'creates plan with no-arp flag by default' {
-        $plan = New-SecSafeNmapPlan -Profile IdentityAccess -TargetFile '.\targets.txt' -ExcludeFile '.\exclude.txt' -OutputDirectory $TestDrive
+        $targets = Join-Path $TestDrive 'targets.txt'
+        '127.0.0.1' | Set-Content -LiteralPath $targets
+        $plan = New-SecSafeNmapPlan -Profile IdentityAccess -TargetFile $targets -OutputDirectory $TestDrive
         $plan[0].Command | Should -Match '--disable-arp-ping'
+        $plan[0].Profile | Should -Be 'DomainControllerExposure'
     }
 
     It 'parses target list and applies exclude file' {
@@ -20,5 +24,11 @@ Describe 'ThreatValidation module shape tests' {
         $list = Get-SecTargetList -Path $targets -ExcludePath $exclude
         $list | Should -Contain '10.0.0.1'
         $list | Should -Not -Contain '10.0.0.2'
+    }
+
+    It 'exposes extended profile catalog' {
+        $profiles = Get-SecThreatProfileNames
+        $profiles | Should -Contain 'HybridFullStack'
+        $profiles | Should -Contain 'IoTSurface'
     }
 }

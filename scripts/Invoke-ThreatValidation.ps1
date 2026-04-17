@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$OutputPath,
-    [string]$TargetsPath = '.\targets.txt',
-    [string]$ExcludePath = '.\exclude.txt',
+    [string]$TargetsPath = './targets.txt',
+    [string]$ExcludePath = './exclude.txt',
     [ValidateSet('VA','PT','VA-PT')]
     [string]$AssessmentType = 'VA',
     [string]$AuthorizationPath,
@@ -10,17 +10,18 @@ param(
     [string]$ScopePath,
     [string]$DataHandlingPath,
     [int]$RetentionDays = 365,
-    [ValidateSet('ResilienceSnmp','IdentityAccess','WindowsProtocol','UnixExposure','MssqlAudit','WebTlsBaseline')]
-    [string]$Profile = 'ResilienceSnmp',
+    [ValidateSet('NetworkEquipment','DomainControllerExposure','LinuxSurface','DatabaseExposure','WebApplication','IoTSurface','PrintInfrastructure','NasStorage','AccessControlSystems','HybridFullStack','ResilienceSnmp','IdentityAccess','WindowsProtocol','UnixExposure','MssqlAudit','WebTlsBaseline')]
+    [string]$Profile = 'HybridFullStack',
     [switch]$Execute
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-Import-Module (Join-Path $root 'modules\Core\Core.psm1') -Force
-Import-Module (Join-Path $root 'modules\Safety\Safety.psm1') -Force
-Import-Module (Join-Path $root 'modules\ThreatValidation\ThreatValidation.psm1') -Force
-Import-Module (Join-Path $root 'modules\Workflow\Workflow.psm1') -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Core' 'Core.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Safety' 'Safety.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'StackMatrix' 'StackMatrix.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'ThreatValidation' 'ThreatValidation.psm1')) -Force
+Import-Module (Join-Path (Join-Path $root 'modules') (Join-Path 'Workflow' 'Workflow.psm1')) -Force
 
 try {
     $ctx = New-SecSuiteRunContext -OutputPath $OutputPath
@@ -50,44 +51,51 @@ try {
         }
     }
 
-    Write-SecLog -Context $ctx -Area 'ThreatValidation' -Message 'Avvio validazione threat-led in modalità difensiva.' -Data @{
-        profile = $Profile
+    $profileResolved = Resolve-SecStackProfile -Name $Profile
+
+    Write-SecLog -Context $ctx -Area 'ThreatValidation' -Message 'Starting threat validation in defensive mode.' -Data @{
+        profile = $profileResolved.Name
+        profileInput = $Profile
         execute = [bool]$Execute
         assessmentType = $AssessmentType
         complianceStatus = if ($compliance) { $compliance.Status } else { 'NotProvided' }
     }
 
     $report = Invoke-SecOperation -Context $ctx -Area 'ThreatValidation' -FailureMessage 'Threat validation failed.' -ScriptBlock {
-        Assert-SecSafeAction -Category 'Inventory' -Reason 'La pipeline usa solo discovery non distruttivo.' | Out-Null
+        Assert-SecSafeAction -Category 'Inventory' -Reason 'Threat validation only runs non-destructive discovery.' | Out-Null
         $targets = @(Get-SecTargetList -Path $resolvedTargetsPath -ExcludePath $resolvedExcludePath)
 
-        # The execution folder keeps each run isolated for evidence preservation.
-        $sessionFolder = Join-Path $ctx.OutputPath ("threat_validation_{0}_{1}" -f $Profile, (Get-Date -Format 'yyyyMMdd_HHmmss'))
-        $plan = @(New-SecSafeNmapPlan -Profile $Profile -TargetFile $resolvedTargetsPath -ExcludeFile $resolvedExcludePath -OutputDirectory $sessionFolder)
-        $scan = @(Invoke-SecSafeScanPlan -Plan $plan -Execute:$Execute)
+        $sessionFolder = Join-Path $ctx.OutputPath ("threat_validation_{0}_{1}" -f $profileResolved.Name.ToLowerInvariant(), (Get-Date -Format 'yyyyMMdd_HHmmss'))
+        $plan = @(New-SecSafeNmapPlan -Profile $profileResolved.Name -TargetFile $resolvedTargetsPath -ExcludeFile $resolvedExcludePath -OutputDirectory $sessionFolder -Config $ctx.Config.ThreatValidation)
+        $scan = @(Invoke-SecSafeScanPlan -Plan $plan -Execute:$Execute -Context $ctx)
         $findings = @(New-SecThreatFindings -ScanResults $scan)
+        $coverage = New-SecCoverageSummary -Profile $profileResolved.Name
 
         [pscustomobject]@{
             Context = $ctx
-            Profile = $Profile
+            Profile = $profileResolved.Name
+            ProfileInput = $Profile
+            ProfileAliases = @($profileResolved.Aliases)
+            ProfileDescription = $profileResolved.Description
             AssessmentType = $AssessmentType
             ExecuteMode = [bool]$Execute
             Compliance = $compliance
+            Coverage = $coverage
             Targets = $targets
             Plan = $plan
             ScanResults = $scan
             Findings = $findings
             SessionFolder = $sessionFolder
             Principles = @(
-                'No ARP scans: tutte le command line includono --disable-arp-ping.',
-                'No exploit: solo script di discovery/hardening.',
-                'Fail-closed: in assenza tool la suite resta in dry-run tracciato.'
+                'No ARP scans: all commands include --disable-arp-ping.',
+                'No exploit or brute-force operations are part of this workflow.',
+                'Fail-closed: if tools are missing, execution degrades to tracked dry-run.'
             )
         }
     }
 
-    $paths = Export-SecSuiteReportSet -Context $ctx -ReportObject $report -BaseName ("threat-validation-{0}" -f $Profile.ToLowerInvariant())
-    Write-SecLog -Context $ctx -Area 'ThreatValidation' -Message 'Validazione completata.' -Data @{ report = $paths; sessionFolder = $report.SessionFolder; findings = $report.Findings.Count }
+    $paths = Export-SecSuiteReportSet -Context $ctx -ReportObject $report -BaseName ("threat-validation-{0}" -f $profileResolved.Name.ToLowerInvariant())
+    Write-SecLog -Context $ctx -Area 'ThreatValidation' -Message 'Threat validation completed.' -Data @{ report = $paths; sessionFolder = $report.SessionFolder; findings = $report.Findings.Count }
     $report
 }
 catch {

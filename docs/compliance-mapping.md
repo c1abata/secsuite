@@ -1,8 +1,18 @@
-# Compliance mapping
+# Compliance Mapping
 
-This suite supports evidence gathering and defensive review aligned at a high level with:
-- ISO/IEC 27001 evidence collection and control verification workflows
-- NIST SP 800-115 technical assessment structure
-- Microsoft Active Directory security baseline review
+TCPENT supports defensive evidence collection aligned at high level with:
 
-The suite is not a certification tool and does not assert formal compliance by itself.
+- ISO/IEC 27001 (authorization, scope, evidence handling, traceability)
+- NIST SP 800-115 (technical assessment lifecycle)
+- NIS2 / DORA operational resilience expectations (auditability and accountability)
+
+## Control coverage in workflow
+
+1. Authorization evidence check.
+2. Rules of engagement check.
+3. Scope evidence check.
+4. Targets syntax and safety check.
+5. Retention policy boundary check.
+6. Auditable execution trace with hash chain.
+
+TCPENT is not a certification engine and does not independently grant compliance certification.

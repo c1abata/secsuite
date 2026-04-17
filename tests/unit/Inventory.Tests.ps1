@@ -1,5 +1,5 @@
 BeforeAll {
-    Import-Module "$PSScriptRoot\..\..\modules\Inventory\Inventory.psm1" -Force
+    Import-Module "$PSScriptRoot/../../modules/Inventory/Inventory.psm1" -Force
 }
 
 Describe 'Inventory module shape tests' {

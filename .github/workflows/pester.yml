@@ -1,7 +1,19 @@
 name: pester
+
 on:
   push:
+    branches:
+      - main
+      - master
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pester-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -13,9 +25,14 @@ jobs:
           - ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Pester
         shell: pwsh
-        run: Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
-      - name: Run tests
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run unit tests
         shell: pwsh
-        run: Invoke-Pester -Path .\\tests\\unit -CI
+        run: |
+          Invoke-Pester -Path ./tests/unit -CI
