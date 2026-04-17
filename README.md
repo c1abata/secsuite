@@ -9,15 +9,7 @@ TCPENT is a defensive, modular VA/PT assessment suite in antirez style: minimal 
 - read-only Active Directory audit
 - full-stack protocol and port exposure validation
 - compliance-gated workflow orchestration with audit trail
-
-## What it does not do
-
-TCPENT blocks offensive behavior by policy:
-
-- exploit execution
-- brute-force/spraying/password attacks
-- remote command execution
-- persistence or target state change
+- blue and purple teaming
 
 ## Repository layout
 
@@ -32,6 +24,7 @@ modules/StackMatrix/       full-stack profile and port matrix catalog
 modules/ThreatValidation/  safe nmap planning/execution and findings engine
 modules/Workflow/          compliance gate and VA/PT workflow controls
 scripts/                   TCPENT entry points and installers
+scripts/off/               lab-only SafeRedTeamSuite utilities (locked by default)
 tests/unit/                Pester unit tests
 docs/                      threat model, compliance mapping, workflow, install guide
 ```
@@ -45,6 +38,17 @@ pwsh -NoProfile -File ./scripts/Invoke-TcpentADAudit.ps1 -OutputPath ./output
 pwsh -NoProfile -File ./scripts/Invoke-TcpentThreatValidation.ps1 -OutputPath ./output -TargetsPath ./targets.txt -Profile HybridFullStack
 pwsh -NoProfile -File ./scripts/Invoke-TcpentVaPtWorkflow.ps1 -OutputPath ./output -AssessmentType VA-PT -AuthorizationPath ./evidence/authorization.txt -RulesOfEngagementPath ./evidence/roe.txt -ScopePath ./evidence/scope.txt -TargetsPath ./targets.txt -DataHandlingPath ./evidence/data-handling.txt -Profile HybridFullStack -ExecuteThreatValidation
 ```
+
+Suite dispatcher:
+
+```powershell
+pwsh -NoProfile -File ./scripts/Invoke-Tcpent.ps1 -Action environment -OutputPath ./output
+pwsh -NoProfile -File ./scripts/Invoke-Tcpent.ps1 -Action threat -OutputPath ./output -TargetsPath ./targets.txt -Profile HybridFullStack
+pwsh -NoProfile -File ./scripts/Invoke-Tcpent.ps1 -Action off
+pwsh -NoProfile -File ./scripts/Invoke-Tcpent.ps1 -Action off -EnableLabOffense
+```
+
+The `off` action loads `scripts/off/SafeRedTeamSuite.ps1` in lock mode by default. Use `-EnableLabOffense` only in isolated, explicitly authorized lab environments.
 
 ## Threat profiles
 

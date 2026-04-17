@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('environment','passive','adaudit','threat','workflow','install-check')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('environment','passive','adaudit','threat','workflow','install-check','off')][string]$Action,
     [string]$OutputPath = './output',
     [string]$TargetsPath = './targets.txt',
     [string]$ExcludePath = './exclude.txt',
@@ -13,7 +13,9 @@ param(
     [string]$Profile = 'HybridFullStack',
     [switch]$Execute,
     [switch]$ExecuteThreatValidation,
-    [switch]$IncludeADAudit
+    [switch]$IncludeADAudit,
+    [switch]$EnableLabOffense,
+    [switch]$SkipLabConfirmation
 )
 
 switch ($Action) {
@@ -55,5 +57,10 @@ switch ($Action) {
     }
     'install-check' {
         & (Join-Path $PSScriptRoot 'Invoke-TcpentInstallCheck.ps1') -OutputPath $OutputPath
+    }
+    'off' {
+        & (Join-Path $PSScriptRoot 'Invoke-TcpentOffSuite.ps1') `
+            -EnableLabOffense:$EnableLabOffense `
+            -SkipLabConfirmation:$SkipLabConfirmation
     }
 }

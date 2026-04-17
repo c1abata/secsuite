@@ -26,6 +26,7 @@ $moduleChecks = @(
 )
 
 $profiles = @(Get-SecThreatProfileNames)
+$offSuitePath = Join-Path $PSScriptRoot (Join-Path 'off' 'SafeRedTeamSuite.ps1')
 
 $result = [pscustomobject]@{
     SuiteName = $ctx.SuiteName
@@ -34,6 +35,7 @@ $result = [pscustomobject]@{
     CommandChecks = $checks
     ModuleChecks = $moduleChecks
     SupportedProfiles = $profiles
+    OffSuiteAvailable = (Test-Path $offSuitePath)
     Status = 'Ready'
 }
 

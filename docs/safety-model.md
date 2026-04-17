@@ -2,6 +2,8 @@
 
 TCPENT is intentionally defensive, read-only and fail-closed.
 
+`scripts/off` is a separate lab-only simulation module. It is disabled by default, outside the defensive workflow pipeline, and must only be used in isolated authorized environments.
+
 ## Non-negotiable controls
 
 - No exploit execution.

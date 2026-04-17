@@ -7,3 +7,4 @@
 - Compliance and audit logging hardening.
 - Ubuntu/Kali installation bootstrap and validation scripts.
 - Repository cleanup and CI/repository best-practice upgrades.
+- Integrated `scripts/off` with a gated suite dispatcher action (`Invoke-Tcpent.ps1 -Action off`).

@@ -6,6 +6,51 @@ function Test-SecAdModuleAvailable {
     [bool](Get-Module -ListAvailable -Name ActiveDirectory)
 }
 
+if (-not (Get-Command -Name Resolve-DnsName -ErrorAction SilentlyContinue)) {
+    function global:Resolve-DnsName {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory)][string]$Name,
+            [Parameter()][ValidateSet('A','AAAA','NS')][string]$Type = 'A'
+        )
+
+        try {
+            $entry = [System.Net.Dns]::GetHostEntry($Name)
+        }
+        catch {
+            return @()
+        }
+
+        if ($Type -eq 'NS') {
+            if ([string]::IsNullOrWhiteSpace($entry.HostName)) {
+                return @()
+            }
+
+            return [pscustomobject]@{
+                NameHost = $entry.HostName.TrimEnd('.')
+            }
+        }
+
+        $family = if ($Type -eq 'AAAA') {
+            [System.Net.Sockets.AddressFamily]::InterNetworkV6
+        }
+        else {
+            [System.Net.Sockets.AddressFamily]::InterNetwork
+        }
+
+        return @(
+            $entry.AddressList |
+                Where-Object { $_.AddressFamily -eq $family } |
+                ForEach-Object {
+                    [pscustomobject]@{
+                        NameHost  = $entry.HostName
+                        IPAddress = $_.IPAddressToString
+                    }
+                }
+        )
+    }
+}
+
 function ConvertFrom-SecLargeInteger {
     [CmdletBinding()]
     param([Parameter(Mandatory)][AllowNull()]$Value)
@@ -308,24 +353,24 @@ function Invoke-SecADSecurityChecks {
 
         try {
             $dnsServers = Resolve-DnsName -Name $Domain -Type NS -ErrorAction Stop | Select-Object -ExpandProperty NameHost -Unique
-            $unauth.Add([pscustomobject]@{ Check='DNS namespace discovery'; Status='OK'; Details=@($dnsServers) })
+            $null = $unauth.Add([pscustomobject]@{ Check='DNS namespace discovery'; Status='OK'; Details=@($dnsServers) })
         }
         catch {
-            $unauth.Add([pscustomobject]@{ Check='DNS namespace discovery'; Status='WARN'; Details=@('NS records not discovered from current host.') })
+            $null = $unauth.Add([pscustomobject]@{ Check='DNS namespace discovery'; Status='WARN'; Details=@('NS records not discovered from current host.') })
         }
 
         try {
             $ldapConn = New-SecLdapConnection -Server $targetServer -Port 389 -AuthType Negotiate
             $root = Get-SecLdapEntries -Connection $ldapConn -BaseDn '' -Filter '(objectClass=*)' -Properties @('defaultNamingContext') -Scope Base
             $isReachable = $null -ne $root -and @($root).Count -gt 0
-            $unauth.Add([pscustomobject]@{
+            $null = $unauth.Add([pscustomobject]@{
                 Check = 'LDAP endpoint reachability'
                 Status = if ($isReachable) { 'OK' } else { 'WARN' }
                 Details = @("Target: $targetServer:389")
             })
         }
         catch {
-            $unauth.Add([pscustomobject]@{ Check='LDAP endpoint reachability'; Status='WARN'; Details=@('LDAP service unreachable or blocked from current source.') })
+            $null = $unauth.Add([pscustomobject]@{ Check='LDAP endpoint reachability'; Status='WARN'; Details=@('LDAP service unreachable or blocked from current source.') })
         }
         finally {
             if ($ldapConn) { $ldapConn.Dispose() }
@@ -342,55 +387,55 @@ function Invoke-SecADSecurityChecks {
             }
 
             if ($foundUsers.Count -gt 0) {
-                $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='WARN'; Details=@("Discovered accounts: $($foundUsers -join ', ')") })
+                    $null = $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='WARN'; Details=@("Discovered accounts: $($foundUsers -join ', ')") })
+                }
+                else {
+                    $null = $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='OK'; Details=@('No common principals resolved with current technique.') })
+                }
             }
-            else {
-                $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='OK'; Details=@('No common principals resolved with current technique.') })
-            }
-        }
         catch {
-            $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='INFO'; Details=@('Enumeration skipped because LDAP query was not possible.') })
+            $null = $unauth.Add([pscustomobject]@{ Check='Common principal enumeration'; Status='INFO'; Details=@('Enumeration skipped because LDAP query was not possible.') })
         }
         finally {
             if ($searchConn) { $searchConn.Dispose() }
         }
 
-        $report.UnauthenticatedChecks = @($unauth)
+        $report.UnauthenticatedChecks = $unauth.ToArray()
     }
 
     if (-not $UnauthenticatedOnly) {
         $auth = New-Object System.Collections.Generic.List[object]
 
         if (-not $Credential) {
-            $auth.Add([pscustomobject]@{ Check='Authenticated checks'; Status='INFO'; Details=@('No credentials provided. Authenticated checks skipped.') })
+            $null = $auth.Add([pscustomobject]@{ Check='Authenticated checks'; Status='INFO'; Details=@('No credentials provided. Authenticated checks skipped.') })
         }
         else {
             try {
                 $summary = Get-SecLdapSummary -Config @{ DomainController = $targetServer; UseLdaps = $false; LdapAuthType = 'Negotiate'; InactiveUserDays = 90; PrivilegedGroups = @('Domain Admins','Enterprise Admins') } -DomainController $targetServer -Credential $Credential
 
                 $pwdMin = $summary.PasswordPolicy.MinPasswordLength
-                $auth.Add([pscustomobject]@{
+                $null = $auth.Add([pscustomobject]@{
                     Check='Password policy baseline'
                     Status= if ($null -eq $pwdMin -or $pwdMin -ge 12) { 'OK' } else { 'WARN' }
                     Details=@("Min password length: $pwdMin","Complexity enabled: $($summary.PasswordPolicy.ComplexityEnabled)")
                 })
 
                 $kerberoastCount = @($summary.ServiceAccounts).Count
-                $auth.Add([pscustomobject]@{
+                $null = $auth.Add([pscustomobject]@{
                     Check='Kerberoastable service accounts'
                     Status= if ($kerberoastCount -gt 0) { 'WARN' } else { 'OK' }
                     Details=@("Accounts with SPN: $kerberoastCount")
                 })
 
                 $asRepCount = @($summary.InactiveUsers | Where-Object { $_.DoesNotRequirePreAuth }).Count
-                $auth.Add([pscustomobject]@{
+                $null = $auth.Add([pscustomobject]@{
                     Check='AS-REP roast exposure'
                     Status= if ($asRepCount -gt 0) { 'WARN' } else { 'OK' }
                     Details=@("Users without pre-auth: $asRepCount")
                 })
 
                 $delegationCount = @($summary.Computers | Where-Object { $_.TrustedForDelegation }).Count
-                $auth.Add([pscustomobject]@{
+                $null = $auth.Add([pscustomobject]@{
                     Check='Unconstrained delegation'
                     Status= if ($delegationCount -gt 0) { 'WARN' } else { 'OK' }
                     Details=@("Computers trusted for delegation: $delegationCount")
@@ -398,12 +443,12 @@ function Invoke-SecADSecurityChecks {
             }
             catch {
                 $message = "Authenticated checks failed: $($_.Exception.Message)"
-                $auth.Add([pscustomobject]@{ Check='Authenticated checks'; Status='ERROR'; Details=@($message) })
+                $null = $auth.Add([pscustomobject]@{ Check='Authenticated checks'; Status='ERROR'; Details=@($message) })
                 $report.Errors += $message
             }
         }
 
-        $report.AuthenticatedChecks = @($auth)
+        $report.AuthenticatedChecks = $auth.ToArray()
     }
 
     $report.CompletedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
@@ -498,47 +543,47 @@ function New-SecADFindings {
     $findings = New-Object System.Collections.Generic.List[object]
 
     if (-not $AuditData.Available) {
-        $findings.Add([pscustomobject]@{ Id='AD-000'; Severity='Info'; Title='AD module not available'; Detail=$AuditData.Message })
-        return @($findings)
+        $null = $findings.Add([pscustomobject]@{ Id='AD-000'; Severity='Info'; Title='AD module not available'; Detail=$AuditData.Message })
+        return $findings.ToArray()
     }
 
     if ($null -ne $AuditData.PasswordPolicy.MinPasswordLength -and $AuditData.PasswordPolicy.MinPasswordLength -lt 12) {
-        $findings.Add([pscustomobject]@{ Id='AD-001'; Severity='Medium'; Title='Min password length below 12'; Detail="Configured value: $($AuditData.PasswordPolicy.MinPasswordLength)" })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-001'; Severity='Medium'; Title='Min password length below 12'; Detail="Configured value: $($AuditData.PasswordPolicy.MinPasswordLength)" })
     }
 
     if ($null -ne $AuditData.PasswordPolicy.ComplexityEnabled -and -not $AuditData.PasswordPolicy.ComplexityEnabled) {
-        $findings.Add([pscustomobject]@{ Id='AD-002'; Severity='High'; Title='Password complexity disabled'; Detail='Default domain password policy reports ComplexityEnabled = false.' })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-002'; Severity='High'; Title='Password complexity disabled'; Detail='Default domain password policy reports ComplexityEnabled = false.' })
     }
 
     foreach ($u in @($AuditData.InactiveUsers | Where-Object { $_.PasswordNotRequired })) {
-        $findings.Add([pscustomobject]@{ Id='AD-003'; Severity='High'; Title='User with PasswordNotRequired'; Detail=$u.SamAccountName })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-003'; Severity='High'; Title='User with PasswordNotRequired'; Detail=$u.SamAccountName })
     }
 
     foreach ($u in @($AuditData.InactiveUsers | Where-Object { $_.DoesNotRequirePreAuth })) {
-        $findings.Add([pscustomobject]@{ Id='AD-004'; Severity='High'; Title='User without Kerberos pre-auth'; Detail=$u.SamAccountName })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-004'; Severity='High'; Title='User without Kerberos pre-auth'; Detail=$u.SamAccountName })
     }
 
     foreach ($u in @($AuditData.ServiceAccounts | Where-Object { $_.TrustedForDelegation })) {
-        $findings.Add([pscustomobject]@{ Id='AD-005'; Severity='High'; Title='Service account trusted for delegation'; Detail=$u.SamAccountName })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-005'; Severity='High'; Title='Service account trusted for delegation'; Detail=$u.SamAccountName })
     }
 
     foreach ($c in @($AuditData.Computers | Where-Object { $_.TrustedForDelegation })) {
-        $findings.Add([pscustomobject]@{ Id='AD-006'; Severity='High'; Title='Computer trusted for delegation'; Detail=$c.Name })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-006'; Severity='High'; Title='Computer trusted for delegation'; Detail=$c.Name })
     }
 
     foreach ($t in @($AuditData.Trusts | Where-Object { -not $_.SelectiveAuthentication })) {
-        $findings.Add([pscustomobject]@{ Id='AD-007'; Severity='Medium'; Title='Trust without selective authentication'; Detail=$t.Name })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-007'; Severity='Medium'; Title='Trust without selective authentication'; Detail=$t.Name })
     }
 
     if ($AuditData.ExposureScore -and $AuditData.ExposureScore.Score -ge 40) {
-        $findings.Add([pscustomobject]@{ Id='AD-008'; Severity='High'; Title='High AD exposure score'; Detail="Score: $($AuditData.ExposureScore.Score) - Rating: $($AuditData.ExposureScore.Rating)" })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-008'; Severity='High'; Title='High AD exposure score'; Detail="Score: $($AuditData.ExposureScore.Score) - Rating: $($AuditData.ExposureScore.Rating)" })
     }
 
     if (@($AuditData.AttackPaths).Count -gt 0) {
-        $findings.Add([pscustomobject]@{ Id='AD-009'; Severity='Info'; Title='Attack path graph available'; Detail="Edges collected: $(@($AuditData.AttackPaths).Count)" })
+        $null = $findings.Add([pscustomobject]@{ Id='AD-009'; Severity='Info'; Title='Attack path graph available'; Detail="Edges collected: $(@($AuditData.AttackPaths).Count)" })
     }
 
-    @($findings)
+    $findings.ToArray()
 }
 
 Export-ModuleMember -Function Test-SecAdModuleAvailable, Get-SecADSummary, New-SecADFindings, Get-SecADExposureScore, New-SecADAttackGraph, Invoke-SecADSecurityChecks

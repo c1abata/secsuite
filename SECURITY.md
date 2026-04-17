@@ -14,3 +14,5 @@
 ## Scope
 
 TCPENT is a defensive assessment framework. Reports about offensive feature requests are out of scope.
+
+The optional `scripts/off` lab module is provided for isolated authorized simulations only and is not intended for production environments.

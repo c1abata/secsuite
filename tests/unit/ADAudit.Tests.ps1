@@ -45,13 +45,13 @@ Describe 'Extended AD security checks' {
             )
         }
 
-        Mock New-SecLdapConnection {
+        Mock New-SecLdapConnection -ModuleName ADAudit {
             $conn = [pscustomobject]@{}
             $conn | Add-Member -MemberType ScriptMethod -Name Dispose -Value { }
             $conn
         }
 
-        Mock Get-SecLdapEntries {
+        Mock Get-SecLdapEntries -ModuleName ADAudit {
             @([pscustomobject]@{ Attributes = @{ defaultNamingContext = @('DC=contoso,DC=local') } })
         }
 
