@@ -24,7 +24,7 @@ jobs:
           - windows-latest
           - ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Pester
         shell: pwsh
